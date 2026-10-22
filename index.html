@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QR Code Generator</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --card: #ffffff;
+      --text: #1d2330;
+      --muted: #5c6578;
+      --border: #d5d9e0;
+      --accent: #2557d6;
+      --error: #c0362c;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #14171c;
+        --card: #1d2128;
+        --text: #e6e8ec;
+        --muted: #9aa3b2;
+        --border: #343a45;
+        --accent: #6b93ff;
+        --error: #ff7a6e;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      padding: 32px 16px;
+    }
+    main {
+      width: 100%;
+      max-width: 480px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    h1 { font-size: 1.4rem; margin: 0 0 16px; }
+    label { display: block; font-size: 0.9rem; color: var(--muted); margin-bottom: 6px; }
+    input[type="url"], select {
+      width: 100%;
+      font: inherit;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+    }
+    input[type="url"]:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .row { display: flex; gap: 12px; margin-top: 12px; }
+    .row > div { flex: 1; }
+    .output {
+      margin-top: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      min-height: 40px;
+    }
+    #qr-img {
+      width: 100%;
+      max-width: 320px;
+      height: auto;
+      image-rendering: pixelated;
+      border-radius: 4px;
+    }
+    #message { color: var(--error); font-size: 0.9rem; min-height: 1.2em; margin: 8px 0 0; }
+    a.button {
+      display: inline-block;
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      text-decoration: none;
+      font-size: 0.95rem;
+    }
+    footer { margin-top: 20px; font-size: 0.8rem; color: var(--muted); text-align: center; }
+    footer a { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>QR Code Generator</h1>
+
+    <label for="url">URL</label>
+    <input id="url" type="url" placeholder="https://example.com" autocomplete="off" autofocus>
+
+    <div class="row">
+      <div>
+        <label for="ecc">Error correction</label>
+        <select id="ecc">
+          <option value="L">Low (7%)</option>
+          <option value="M" selected>Medium (15%)</option>
+          <option value="Q">Quartile (25%)</option>
+          <option value="H">High (30%)</option>
+        </select>
+      </div>
+      <div>
+        <label for="size">Image size</label>
+        <select id="size">
+          <option value="256">256 px</option>
+          <option value="512" selected>512 px</option>
+          <option value="1024">1024 px</option>
+        </select>
+      </div>
+    </div>
+
+    <p id="message" role="status"></p>
+
+    <div class="output" id="output" hidden>
+      <img id="qr-img" alt="QR code">
+      <a id="download" class="button" download="qrcode.png">Download PNG</a>
+    </div>
+
+    <footer>
+      Generated in your browser with
+      <a href="https://github.com/kazuhikoarase/qrcode-generator">qrcode-generator</a> (MIT).
+    </footer>
+  </main>
+
+  <!-- qrcode-generator by Kazuhiko Arase, MIT licence -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+  <script>
+    (function () {
+      var input = document.getElementById('url');
+      var ecc = document.getElementById('ecc');
+      var size = document.getElementById('size');
+      var output = document.getElementById('output');
+      var img = document.getElementById('qr-img');
+      var download = document.getElementById('download');
+      var message = document.getElementById('message');
+
+      if (typeof qrcode === 'undefined') {
+        message.textContent = 'Could not load the QR code library.';
+        return;
+      }
+      // Encode text as UTF-8 so non-ASCII URLs survive.
+      qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+
+      var QUIET_ZONE = 4; // modules of white border, per the QR spec
+
+      function render() {
+        var text = input.value.trim();
+        message.textContent = '';
+        if (!text) {
+          output.hidden = true;
+          return;
+        }
+
+        var qr;
+        try {
+          qr = qrcode(0, ecc.value); // 0 = pick the smallest version that fits
+          qr.addData(text, 'Byte');
+          qr.make();
+        } catch (e) {
+          output.hidden = true;
+          message.textContent = 'Input is too long to fit in a QR code at this error-correction level.';
+          return;
+        }
+
+        var count = qr.getModuleCount();
+        var total = count + QUIET_ZONE * 2;
+        var cell = Math.max(1, Math.floor(parseInt(size.value, 10) / total));
+        var px = cell * total;
+
+        var canvas = document.createElement('canvas');
+        canvas.width = canvas.height = px;
+        var ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, px, px);
+        ctx.fillStyle = '#000000';
+        for (var r = 0; r < count; r++) {
+          for (var c = 0; c < count; c++) {
+            if (qr.isDark(r, c)) {
+              ctx.fillRect((c + QUIET_ZONE) * cell, (r + QUIET_ZONE) * cell, cell, cell);
+            }
+          }
+        }
+
+        var dataUrl = canvas.toDataURL('image/png');
+        img.src = dataUrl;
+        img.alt = 'QR code for ' + text;
+        download.href = dataUrl;
+        output.hidden = false;
+
+        if (!/^[a-z][a-z0-9+.-]*:/i.test(text)) {
+          message.textContent = 'Tip: include the scheme (e.g. https://) so scanners treat it as a link.';
+        }
+      }
+
+      input.addEventListener('input', render);
+      ecc.addEventListener('change', render);
+      size.addEventListener('change', render);
+
+      // Allow prefilling via ?url=...
+      var preset = new URLSearchParams(location.search).get('url');
+      if (preset) {
+        input.value = preset;
+        render();
+      }
+    })();
+  </script>
+</body>
+</html>
